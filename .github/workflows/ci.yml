@@ -101,14 +101,6 @@ jobs:
       run: |
         mypy freqtrade scripts
 
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: failure() && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: error
-          details: Freqtrade CI failed on ${{ matrix.os }}
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
-
   build_macos:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -192,14 +184,6 @@ jobs:
       run: |
         mypy freqtrade scripts
 
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: failure() && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: info
-          details: Test Succeeded!
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
-
   build_windows:
 
     runs-on: ${{ matrix.os }}
@@ -249,15 +233,6 @@ jobs:
     - name: Mypy
       run: |
         mypy freqtrade scripts
-
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: failure() && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: error
-          details: Test Failed
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
-
   docs_check:
     runs-on: ubuntu-20.04
     steps:
@@ -277,14 +252,6 @@ jobs:
         pip install -r docs/requirements-docs.txt
         pip install mkdocs
         mkdocs build
-
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: failure() && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: error
-          details: Freqtrade doc test failed!
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
 
   cleanup-prior-runs:
     runs-on: ubuntu-20.04
@@ -308,15 +275,6 @@ jobs:
         required-permission: write
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: always() && steps.check.outputs.has-permission && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: info
-          details: Test Completed!
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
-
   deploy:
     needs: [ build_linux, build_macos, build_windows, docs_check ]
     runs-on: ubuntu-20.04
@@ -340,21 +298,6 @@ jobs:
       run: |
         pip install -U setuptools wheel
         python setup.py sdist bdist_wheel
-
-    - name: Publish to PyPI (Test)
-      uses: pypa/gh-action-pypi-publish@master
-      if: (github.event_name == 'release')
-      with:
-        user: __token__
-        password: ${{ secrets.pypi_test_password }}
-        repository_url: https://test.pypi.org/legacy/
-
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@master
-      if: (github.event_name == 'release')
-      with:
-        user: __token__
-        password: ${{ secrets.pypi_password }}
 
     - name: Dockerhub login
       env:
@@ -387,15 +330,6 @@ jobs:
         BRANCH_NAME: ${{ steps.extract_branch.outputs.branch }}
       run: |
         build_helpers/publish_docker_multi.sh
-
-    - name: Discord notification
-      uses: rjstone/discord-webhook-notify@v1
-      if: always() && ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-      with:
-          severity: info
-          details: Deploy Succeeded!
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
-
 
   deploy_arm:
     needs: [ deploy ]
