@@ -3,6 +3,7 @@ IStrategy interface
 This module defines the interface to apply for strategies
 """
 import logging
+import time
 import warnings
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import arrow
 from pandas import DataFrame
+from pathos.helpers import ThreadPool
 
 from freqtrade.constants import ListPairsWithTimeframes
 from freqtrade.data.dataprovider import DataProvider
@@ -558,8 +560,15 @@ class IStrategy(ABC, HyperStrategyMixin):
         Analyze all pairs using analyze_pair().
         :param pairs: List of pairs to analyze
         """
-        for pair in pairs:
-            self.analyze_pair(pair)
+        logger.info("Starting analysis")
+
+        start_time = time.time()
+        pool = ThreadPool(processes=20)
+        pool.map(self.analyze_pair, pairs)
+        end_time = time.time()
+        run_time = end_time - start_time
+
+        logger.info(f"end analysis in {run_time}")
 
     @staticmethod
     def preserve_df(dataframe: DataFrame) -> Tuple[int, float, datetime]:
