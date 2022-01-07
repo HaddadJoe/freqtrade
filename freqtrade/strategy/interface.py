@@ -402,9 +402,9 @@ class IStrategy(ABC, HyperStrategyMixin):
         """
         return None
 
-###
-# END - Intended to be overridden by strategy
-###
+    ###
+    # END - Intended to be overridden by strategy
+    ###
 
     def gather_informative_pairs(self) -> ListPairsWithTimeframes:
         """
@@ -598,10 +598,10 @@ class IStrategy(ABC, HyperStrategyMixin):
                 raise StrategyError(message)
 
     def get_signal(
-        self,
-        pair: str,
-        timeframe: str,
-        dataframe: DataFrame
+            self,
+            pair: str,
+            timeframe: str,
+            dataframe: DataFrame
     ) -> Tuple[bool, bool, Optional[str], Optional[str]]:
         """
         Calculates current signal based based on the buy / sell columns of the dataframe.
@@ -728,7 +728,6 @@ class IStrategy(ABC, HyperStrategyMixin):
             return SellCheckTuple(sell_type=SellType.ROI)
 
         if stoplossflag.sell_flag:
-
             logger.debug(f"{trade.pair} - Stoploss hit. sell_type={stoplossflag.sell_type}")
             return stoplossflag
 
