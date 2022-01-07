@@ -10,6 +10,7 @@ from freqtrade.persistence.models import PairLock
 from freqtrade.plugins.protections import IProtection
 from freqtrade.resolvers import ProtectionResolver
 
+
 # logger
 logger = logging.getLogger(__name__)
 
