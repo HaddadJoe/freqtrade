@@ -565,6 +565,8 @@ class IStrategy(ABC, HyperStrategyMixin):
         start_time = time.time()
         pool = ThreadPool(processes=20)
         pool.map(self.analyze_pair, pairs)
+        pool.join()
+        pool.close()
         end_time = time.time()
         run_time = end_time - start_time
 
