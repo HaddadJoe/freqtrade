@@ -563,10 +563,8 @@ class IStrategy(ABC, HyperStrategyMixin):
         logger.info("Starting analysis")
 
         start_time = time.time()
-        pool = ThreadPool(processes=20)
-        pool.map(self.analyze_pair, pairs)
-        pool.join()
-        pool.close()
+        with ThreadPool(processes=20) as pool:
+            pool.map(self.analyze_pair, pairs)
         end_time = time.time()
         run_time = end_time - start_time
 
@@ -625,7 +623,8 @@ class IStrategy(ABC, HyperStrategyMixin):
         # Check if dataframe is out of date
         timeframe_minutes = timeframe_to_minutes(timeframe)
         offset = self.config.get('exchange', {}).get('outdated_offset', 5)
-        if latest_date < (arrow.utcnow().shift(minutes=-(timeframe_minutes * 2 + offset))):
+
+        if latest_date < (arrow.utcnow().shift(minutes=-(timeframe_minutes + offset))):
             logger.warning(
                 'Outdated history for pair %s. Last tick is %s minutes old',
                 pair, int((arrow.utcnow() - latest_date).total_seconds() // 60)

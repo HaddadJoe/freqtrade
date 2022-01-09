@@ -3,10 +3,11 @@ Functions to convert data from one format to another
 """
 import itertools
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from operator import itemgetter
 from typing import Any, Dict, List
 
+import ccxt
 import pandas as pd
 from pandas import DataFrame, to_datetime
 
@@ -70,7 +71,8 @@ def clean_ohlcv_dataframe(data: DataFrame, timeframe: str, pair: str, *,
         'volume': 'max',
     })
     # eliminate partial candle
-    if drop_incomplete:
+    timeframe_to_minutes = ccxt.Exchange.parse_timeframe(timeframe) // 60
+    if drop_incomplete and data['date'].max() > datetime.now(timezone.utc) - timedelta(minutes=timeframe_to_minutes):
         data.drop(data.tail(1).index, inplace=True)
         logger.debug('Dropping last candle')
 
