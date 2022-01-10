@@ -1372,6 +1372,10 @@ class Exchange:
         return not ((self._pairs_last_refresh_time.get((pair, timeframe), 0)
                      + interval_in_sec) >= arrow.utcnow().int_timestamp)
 
+    def _get_end_time(self, timeframe):
+        timeframe_minutes = timeframe_to_minutes(timeframe)
+        return str(int((datetime.now() - timedelta(minutes=timeframe_minutes/2)).timestamp() * 1000))
+
     @retrier_async
     async def _async_get_candle_history(self, pair: str, timeframe: str,
                                         since_ms: Optional[int] = None) -> Tuple[str, str, List]:
@@ -1387,6 +1391,7 @@ class Exchange:
                 pair, timeframe, since_ms, s
             )
             params = self._ft_has.get('ohlcv_params', {})
+            params["ohlcv_params"]["endTime"] = self._get_end_time(timeframe)
             data = await self._api_async.fetch_ohlcv(pair, timeframe=timeframe,
                                                      since=since_ms,
                                                      limit=self.ohlcv_candle_limit(timeframe),

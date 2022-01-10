@@ -71,9 +71,12 @@ def clean_ohlcv_dataframe(data: DataFrame, timeframe: str, pair: str, *,
         'volume': 'max',
     })
     # eliminate partial candle
-    timeframe_to_minutes = ccxt.Exchange.parse_timeframe(timeframe) // 60
-    if drop_incomplete and data['date'].max() > datetime.now(timezone.utc) - timedelta(minutes=timeframe_to_minutes):
+    # timeframe_to_minutes = ccxt.Exchange.parse_timeframe(timeframe) // 60
+    # if drop_incomplete and data['date'].max() > datetime.now(timezone.utc) - timedelta(
+    #         minutes=timeframe_to_minutes) + timedelta(seconds=30):
+    if drop_incomplete:
         data.drop(data.tail(1).index, inplace=True)
+        data = pd.concat([data.head(1), data])
         logger.debug('Dropping last candle')
 
     if fill_missing:

@@ -3,6 +3,7 @@ Freqtrade is the main module of this bot. It contains the class Freqtrade()
 """
 import copy
 import logging
+import time
 import traceback
 from datetime import datetime, timezone
 from math import isclose
@@ -148,6 +149,11 @@ class FreqtradeBot(LoggingMixin):
         otherwise a new trade is created.
         :return: True if one or more trades has been created or closed, False otherwise
         """
+        if datetime.utcnow().minute % 5 == 0 and datetime.utcnow().second < 1:
+            sleep_time = 1
+            logger.info(f"Delaying for {sleep_time} seconds")
+            time.sleep(sleep_time)
+            logger.info("Delaying done")
 
         # Check whether markets have to be reloaded and reload them when it's needed
         self.exchange.reload_markets()
