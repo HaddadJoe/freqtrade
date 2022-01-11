@@ -31,12 +31,9 @@ from freqtrade.exchange.common import (API_FETCH_ORDER_RETRY_COUNT, BAD_EXCHANGE
 from freqtrade.misc import chunks, deep_merge_dicts, safe_value_fallback2
 from freqtrade.plugins.pairlist.pairlist_helpers import expand_pairlist
 
-
 CcxtModuleType = Any
 
-
 logger = logging.getLogger(__name__)
-
 
 # Workaround for adding samesite support to pre 3.8 python
 # Only applies to python3.7, and only on certain exchanges (kraken)
@@ -45,7 +42,6 @@ http.cookies.Morsel._reserved["samesite"] = "SameSite"  # type: ignore
 
 
 class Exchange:
-
     _config: Dict = {}
 
     # Parameters to add directly to ccxt sync/async initialization.
@@ -376,7 +372,7 @@ class Exchange:
             raise OperationalException(
                 'Could not load markets, therefore cannot start. '
                 'Please investigate the above error for more details.'
-                )
+            )
         quote_currencies = self.get_quote_currencies()
         if stake_currency not in quote_currencies:
             raise OperationalException(
@@ -1372,9 +1368,12 @@ class Exchange:
         return not ((self._pairs_last_refresh_time.get((pair, timeframe), 0)
                      + interval_in_sec) >= arrow.utcnow().int_timestamp)
 
-    def _get_end_time(self, timeframe):
+    def _get_end_time(self):
+        return str(int((datetime.now().replace(second=0, microsecond=0) - timedelta(seconds=2)).timestamp() * 1000))
+
+    def _get_start_time(self, timeframe):
         timeframe_minutes = timeframe_to_minutes(timeframe)
-        return str(int((datetime.now() - timedelta(minutes=timeframe_minutes/2)).timestamp() * 1000))
+        return str(int((datetime.now().replace(second=0, microsecond=0) - 900 * timedelta(minutes=timeframe_minutes)).timestamp() * 1000))
 
     @retrier_async
     async def _async_get_candle_history(self, pair: str, timeframe: str,
@@ -1391,7 +1390,8 @@ class Exchange:
                 pair, timeframe, since_ms, s
             )
             params = self._ft_has.get('ohlcv_params', {})
-            params["ohlcv_params"]["endTime"] = self._get_end_time(timeframe)
+            params["endTime"] = self._get_end_time()
+            params["startTime"] = self._get_start_time(timeframe)
             data = await self._api_async.fetch_ohlcv(pair, timeframe=timeframe,
                                                      since=since_ms,
                                                      limit=self.ohlcv_candle_limit(timeframe),
@@ -1445,7 +1445,7 @@ class Exchange:
             else:
                 logger.debug(
                     "Fetching trades for pair %s, since %s %s...",
-                    pair,  since,
+                    pair, since,
                     '(' + arrow.get(since // 1000).isoformat() + ') ' if since is not None else ''
                 )
                 trades = await self._api_async.fetch_trades(pair, since=since, limit=1000)
