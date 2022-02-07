@@ -608,8 +608,9 @@ class Exchange:
             'cost': _amount * rate,
             'type': ordertype,
             'side': side,
+            'filled': 0,
             'remaining': _amount,
-            'datetime': arrow.utcnow().isoformat(),
+            'datetime': arrow.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             'timestamp': arrow.utcnow().int_timestamp * 1000,
             'status': "closed" if ordertype == "market" else "open",
             'fee': None,
@@ -623,6 +624,7 @@ class Exchange:
             average = self.get_dry_market_fill_price(pair, side, amount, rate)
             dry_order.update({
                 'average': average,
+                'filled': _amount,
                 'cost': dry_order['amount'] * average,
             })
             dry_order = self.add_dry_order_fee(pair, dry_order)
@@ -947,7 +949,7 @@ class Exchange:
             raise OperationalException(e) from e
 
     @retrier
-    def get_tickers(self, cached: bool = False) -> Dict:
+    def get_tickers(self, symbols: List[str] = None, cached: bool = False) -> Dict:
         """
         :param cached: Allow cached result
         :return: fetch_tickers result
@@ -957,7 +959,7 @@ class Exchange:
             if tickers:
                 return tickers
         try:
-            tickers = self._api.fetch_tickers()
+            tickers = self._api.fetch_tickers(symbols)
             self._fetch_tickers_cache['fetch_tickers'] = tickers
             return tickers
         except ccxt.NotSupported as e:
