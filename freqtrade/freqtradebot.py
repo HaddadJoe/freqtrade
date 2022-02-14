@@ -149,8 +149,11 @@ class FreqtradeBot(LoggingMixin):
         otherwise a new trade is created.
         :return: True if one or more trades has been created or closed, False otherwise
         """
-        if datetime.utcnow().minute % 5 == 0 and datetime.utcnow().second < 1:
-            sleep_time = 1
+        utc_now = datetime.utcnow()
+        seconds = utc_now.second
+        minutes = utc_now.minute
+        if minutes % 5 == 0 and seconds < 2:
+            sleep_time = 2-seconds
             logger.info(f"Delaying for {sleep_time} seconds")
             time.sleep(sleep_time)
             logger.info("Delaying done")

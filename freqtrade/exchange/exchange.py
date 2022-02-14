@@ -1034,17 +1034,6 @@ class Exchange:
             raise OperationalException(e) from e
 
     def get_rate(self, pair: str, refresh: bool, side: str) -> float:
-        """
-        Calculates bid/ask target
-        bid rate - between current ask price and last price
-        ask rate - either using ticker bid or first bid based on orderbook
-        or remain static in any other case since it's not updating.
-        :param pair: Pair to get rate for
-        :param refresh: allow cached data
-        :param side: "buy" or "sell"
-        :return: float: Price
-        :raises PricingError if orderbook price could not be determined.
-        """
         cache_rate: TTLCache = self._buy_rate_cache if side == "buy" else self._sell_rate_cache
         [strat_name, name] = ['bid_strategy', 'Buy'] if side == "buy" else ['ask_strategy', 'Sell']
 
@@ -1368,14 +1357,23 @@ class Exchange:
         interval_in_sec = timeframe_to_seconds(timeframe)
 
         return not ((self._pairs_last_refresh_time.get((pair, timeframe), 0)
-                     + interval_in_sec) >= arrow.utcnow().int_timestamp)
+                     + 2 * interval_in_sec) >= arrow.utcnow().int_timestamp)
 
-    def _get_end_time(self):
-        return str(int((datetime.now().replace(second=0, microsecond=0) - timedelta(seconds=2)).timestamp() * 1000))
+    def _get_end_time(self, timeframe):
+        now = datetime.now()
+        timeframe_minutes = timeframe_to_minutes(timeframe)
+        minutes = now.minute - now.minute % timeframe_minutes
+        end_time = now.replace(minute=minutes, second=0, microsecond=0) - timedelta(seconds=1)
+        logger.debug(f"End time is {end_time:%H:%M:%S}")
+        return str(int(end_time.timestamp() * 1000))
 
     def _get_start_time(self, timeframe):
+        now = datetime.now()
         timeframe_minutes = timeframe_to_minutes(timeframe)
-        return str(int((datetime.now().replace(second=0, microsecond=0) - 900 * timedelta(minutes=timeframe_minutes)).timestamp() * 1000))
+        minutes = now.minute - now.minute % timeframe_minutes
+        start_time = now.replace(minute=minutes, second=0, microsecond=0) - 900 * timedelta(minutes=timeframe_minutes)
+        logger.debug(f"Start time is {start_time:%H:%M:%S}")
+        return str(int(start_time.timestamp() * 1000))
 
     @retrier_async
     async def _async_get_candle_history(self, pair: str, timeframe: str,
@@ -1392,8 +1390,8 @@ class Exchange:
                 pair, timeframe, since_ms, s
             )
             params = self._ft_has.get('ohlcv_params', {})
-            params["endTime"] = self._get_end_time()
             params["startTime"] = self._get_start_time(timeframe)
+            params["endTime"] = self._get_end_time(timeframe)
             data = await self._api_async.fetch_ohlcv(pair, timeframe=timeframe,
                                                      since=since_ms,
                                                      limit=self.ohlcv_candle_limit(timeframe),
