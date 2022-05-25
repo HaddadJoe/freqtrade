@@ -44,7 +44,7 @@ It uses configuration from `exchange.pair_whitelist` and `exchange.pair_blacklis
 ```json
 "pairlists": [
     {"method": "StaticPairList"}
-    ],
+],
 ```
 
 By default, only currently enabled pairs are allowed.
@@ -160,17 +160,17 @@ This filter allows freqtrade to ignore pairs until they have been listed for at 
 
 Offsets an incoming pairlist by a given `offset` value.
 
-As an example it can be used in conjunction with `VolumeFilter` to remove the top X volume pairs. Or to split
-a larger pairlist on two bot instances.
+As an example it can be used in conjunction with `VolumeFilter` to remove the top X volume pairs. Or to split a larger pairlist on two bot instances.
 
-Example to remove the first 10 pairs from the pairlist:
+Example to remove the first 10 pairs from the pairlist, and takes the next 20 (taking items 10-30 of the initial list):
 
 ```json
 "pairlists": [
     // ...
     {
         "method": "OffsetFilter",
-        "offset": 10
+        "offset": 10,
+        "number_assets": 20
     }
 ],
 ```
@@ -181,7 +181,7 @@ Example to remove the first 10 pairs from the pairlist:
     `VolumeFilter`.
 
 !!! Note
-    An offset larger then the total length of the incoming pairlist will result in an empty pairlist.
+    An offset larger than the total length of the incoming pairlist will result in an empty pairlist.
 
 #### PerformanceFilter
 
@@ -246,7 +246,7 @@ On exchanges that deduct fees from the receiving currency (e.g. FTX) - this can 
 The `low_price_ratio` setting removes pairs where a raise of 1 price unit (pip) is above the `low_price_ratio` ratio.
 This option is disabled by default, and will only apply if set to > 0.
 
-For `PriceFiler` at least one of its `min_price`, `max_price` or `low_price_ratio` settings must be applied.
+For `PriceFilter` at least one of its `min_price`, `max_price` or `low_price_ratio` settings must be applied.
 
 Calculation example:
 

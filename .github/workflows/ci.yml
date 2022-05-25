@@ -19,26 +19,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-18.04, ubuntu-20.04 ]
+        os: [ ubuntu-18.04, ubuntu-20.04, ubuntu-22.04 ]
         python-version: ["3.8", "3.9", "3.10"]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Cache_dependencies
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cache
       with:
         path: ~/dependencies/
         key: ${{ runner.os }}-dependencies
 
     - name: pip cache (linux)
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       if: runner.os == 'Linux'
       with:
         path: ~/.cache/pip
@@ -70,7 +70,7 @@ jobs:
       if: matrix.python-version == '3.9'
 
     - name: Coveralls
-      if: (runner.os == 'Linux' && matrix.python-version == '3.8')
+      if: (runner.os == 'Linux' && matrix.python-version == '3.9')
       env:
         # Coveralls token. Not used as secret due to github not providing secrets to forked repositories
         COVERALLS_REPO_TOKEN: 6D1m0xupS3FgutfuGao8keFf9Hc0FpIXu
@@ -78,11 +78,13 @@ jobs:
         # Allow failure for coveralls
         coveralls || true
 
-    - name: Backtesting
+    - name: Backtesting (multi)
       run: |
         cp config_examples/config_bittrex.example.json config.json
         freqtrade create-userdir --userdir user_data
-        freqtrade backtesting --datadir tests/testdata --strategy SampleStrategy
+        freqtrade new-strategy -s AwesomeStrategy
+        freqtrade new-strategy -s AwesomeStrategyMin --template minimal
+        freqtrade backtesting --datadir tests/testdata --strategy-list AwesomeStrategy AwesomeStrategyMin -i 5m
 
     - name: Hyperopt
       run: |
@@ -100,7 +102,7 @@ jobs:
 
     - name: Mypy
       run: |
-        mypy freqtrade scripts
+        mypy freqtrade scripts tests
 
   build_macos:
     runs-on: ${{ matrix.os }}
@@ -110,22 +112,22 @@ jobs:
         python-version: ["3.8", "3.9", "3.10"]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Cache_dependencies
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cache
       with:
         path: ~/dependencies/
         key: ${{ runner.os }}-dependencies
 
     - name: pip cache (macOS)
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       if: runner.os == 'macOS'
       with:
         path: ~/Library/Caches/pip
@@ -150,22 +152,14 @@ jobs:
 
     - name: Tests
       run: |
-        pytest --random-order --cov=freqtrade --cov-config=.coveragerc
-
-    - name: Coveralls
-      if: (runner.os == 'Linux' && matrix.python-version == '3.8')
-      env:
-        # Coveralls token. Not used as secret due to github not providing secrets to forked repositories
-        COVERALLS_REPO_TOKEN: 6D1m0xupS3FgutfuGao8keFf9Hc0FpIXu
-      run: |
-        # Allow failure for coveralls
-        coveralls -v  || true
+        pytest --random-order
 
     - name: Backtesting
       run: |
         cp config_examples/config_bittrex.example.json config.json
         freqtrade create-userdir --userdir user_data
-        freqtrade backtesting --datadir tests/testdata --strategy SampleStrategy
+        freqtrade new-strategy -s AwesomeStrategyAdv --template advanced
+        freqtrade backtesting --datadir tests/testdata --strategy AwesomeStrategyAdv
 
     - name: Hyperopt
       run: |
@@ -194,15 +188,15 @@ jobs:
         python-version: ["3.8", "3.9", "3.10"]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Pip cache (Windows)
-      uses: actions/cache@preview
+      uses: actions/cache@v3
       with:
         path: ~\AppData\Local\pip\Cache
         key: ${{ matrix.os }}-${{ matrix.python-version }}-pip
@@ -213,7 +207,7 @@ jobs:
 
     - name: Tests
       run: |
-        pytest --random-order --cov=freqtrade --cov-config=.coveragerc
+        pytest --random-order
 
     - name: Backtesting
       run: |
@@ -237,16 +231,16 @@ jobs:
   docs_check:
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Documentation syntax
       run: |
         ./tests/test_docs.sh
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
-        python-version: 3.8
+        python-version: "3.10"
 
     - name: Documentation build
       run: |
@@ -255,6 +249,9 @@ jobs:
         mkdocs build
 
   cleanup-prior-runs:
+    permissions:
+      actions: write  # for rokroskar/workflow-run-cleanup-action to obtain workflow name & cancel it
+      contents: read  # for rokroskar/workflow-run-cleanup-action to obtain branch
     runs-on: ubuntu-20.04
     steps:
     - name: Cleanup previous runs on this branch
@@ -265,8 +262,12 @@ jobs:
 
   # Notify only once - when CI completes (and after deploy) in case it's successfull
   notify-complete:
-    needs: [ build_linux, build_macos, build_windows, docs_check ]
+    needs: [ build_linux, build_macos, build_windows, docs_check, mypy_version_check ]
     runs-on: ubuntu-20.04
+    # Discord notification can't handle schedule events
+    if: (github.event_name != 'schedule')
+    permissions:
+      repository-projects: read
     steps:
 
     - name: Check user permission
@@ -277,18 +278,18 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   deploy:
-    needs: [ build_linux, build_macos, build_windows, docs_check ]
+    needs: [ build_linux, build_macos, build_windows, docs_check, mypy_version_check ]
     runs-on: ubuntu-20.04
 
     if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'release') && github.repository == 'freqtrade/freqtrade'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
-        python-version: 3.8
+        python-version: "3.9"
 
     - name: Extract branch name
       shell: bash
@@ -339,7 +340,7 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'release') && github.repository == 'freqtrade/freqtrade'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Extract branch name
       shell: bash
