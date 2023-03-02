@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
-from freqtrade.constants import DATETIME_PRINT_FORMAT
+from freqtrade.constants import DATETIME_PRINT_FORMAT, IntOrInf
 from freqtrade.enums import OrderTypeValues, SignalDirection, TradingMode
 
 
@@ -104,6 +104,10 @@ class Profit(BaseModel):
     best_pair_profit_ratio: float
     winning_trades: int
     losing_trades: int
+    profit_factor: float
+    max_drawdown: float
+    max_drawdown_abs: float
+    trading_volume: Optional[float]
 
 
 class SellReason(BaseModel):
@@ -120,6 +124,8 @@ class Stats(BaseModel):
 class DailyRecord(BaseModel):
     date: date
     abs_profit: float
+    rel_profit: float
+    starting_balance: float
     fiat_value: float
     trade_count: int
 
@@ -159,14 +165,15 @@ class ShowConfig(BaseModel):
     stake_amount: str
     available_capital: Optional[float]
     stake_currency_decimals: int
-    max_open_trades: int
+    max_open_trades: IntOrInf
     minimal_roi: Dict[str, Any]
     stoploss: Optional[float]
+    stoploss_on_exchange: bool
     trailing_stop: Optional[bool]
     trailing_stop_positive: Optional[float]
     trailing_stop_positive_offset: Optional[float]
     trailing_only_offset_is_reached: Optional[bool]
-    unfilledtimeout: UnfilledTimeout
+    unfilledtimeout: Optional[UnfilledTimeout]  # Empty in webserver mode
     order_types: Optional[OrderTypes]
     use_custom_stoploss: Optional[bool]
     timeframe: Optional[str]
@@ -188,11 +195,11 @@ class OrderSchema(BaseModel):
     pair: str
     order_id: str
     status: str
-    remaining: float
+    remaining: Optional[float]
     amount: float
     safe_price: float
     cost: float
-    filled: float
+    filled: Optional[float]
     ft_order_side: str
     order_type: str
     is_open: bool
@@ -211,8 +218,8 @@ class TradeSchema(BaseModel):
     amount: float
     amount_requested: float
     stake_amount: float
+    max_stake_amount: Optional[float]
     strategy: str
-    buy_tag: Optional[str]  # Deprecated
     enter_tag: Optional[str]
     timeframe: int
     fee_open: Optional[float]
@@ -221,25 +228,32 @@ class TradeSchema(BaseModel):
     fee_close: Optional[float]
     fee_close_cost: Optional[float]
     fee_close_currency: Optional[str]
+
     open_date: str
     open_timestamp: int
     open_rate: float
     open_rate_requested: Optional[float]
     open_trade_value: float
+
     close_date: Optional[str]
     close_timestamp: Optional[int]
     close_rate: Optional[float]
     close_rate_requested: Optional[float]
+
     close_profit: Optional[float]
     close_profit_pct: Optional[float]
     close_profit_abs: Optional[float]
+
     profit_ratio: Optional[float]
     profit_pct: Optional[float]
     profit_abs: Optional[float]
     profit_fiat: Optional[float]
-    sell_reason: Optional[str]  # Deprecated
+
+    realized_profit: float
+
     exit_reason: Optional[str]
     exit_order_status: Optional[str]
+
     stop_loss_abs: Optional[float]
     stop_loss_ratio: Optional[float]
     stop_loss_pct: Optional[float]
@@ -249,6 +263,7 @@ class TradeSchema(BaseModel):
     initial_stop_loss_abs: Optional[float]
     initial_stop_loss_ratio: Optional[float]
     initial_stop_loss_pct: Optional[float]
+
     min_rate: Optional[float]
     max_rate: Optional[float]
     open_order_id: Optional[str]
@@ -267,16 +282,17 @@ class OpenTradeSchema(TradeSchema):
     stoploss_current_dist_ratio: Optional[float]
     stoploss_entry_dist: Optional[float]
     stoploss_entry_dist_ratio: Optional[float]
-    current_profit: float
-    current_profit_abs: float
-    current_profit_pct: float
     current_rate: float
+    total_profit_abs: float
+    total_profit_fiat: Optional[float]
+
     open_order: Optional[str]
 
 
 class TradeResponse(BaseModel):
     trades: List[TradeSchema]
     trades_count: int
+    offset: int
     total_trades: int
 
 
@@ -318,11 +334,13 @@ class ForceEnterPayload(BaseModel):
     ordertype: Optional[OrderTypeValues]
     stakeamount: Optional[float]
     entry_tag: Optional[str]
+    leverage: Optional[float]
 
 
 class ForceExitPayload(BaseModel):
     tradeid: str
     ordertype: Optional[OrderTypeValues]
+    amount: Optional[float]
 
 
 class BlacklistPayload(BaseModel):
@@ -363,6 +381,10 @@ class StrategyListResponse(BaseModel):
     strategies: List[str]
 
 
+class FreqAIModelListResponse(BaseModel):
+    freqaimodels: List[str]
+
+
 class StrategyResponse(BaseModel):
     strategy: str
     code: str
@@ -401,15 +423,22 @@ class PairHistory(BaseModel):
         }
 
 
+class BacktestFreqAIInputs(BaseModel):
+    identifier: str
+
+
 class BacktestRequest(BaseModel):
     strategy: str
     timeframe: Optional[str]
     timeframe_detail: Optional[str]
     timerange: Optional[str]
-    max_open_trades: Optional[int]
+    max_open_trades: Optional[IntOrInf]
     stake_amount: Optional[str]
     enable_protections: bool
     dry_run_wallet: Optional[float]
+    backtest_cache: Optional[str]
+    freqaimodel: Optional[str]
+    freqai: Optional[BacktestFreqAIInputs]
 
 
 class BacktestResponse(BaseModel):
@@ -436,5 +465,5 @@ class SysInfo(BaseModel):
 
 
 class Health(BaseModel):
-    last_process: datetime
-    last_process_ts: int
+    last_process: Optional[datetime]
+    last_process_ts: Optional[int]

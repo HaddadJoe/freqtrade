@@ -45,8 +45,7 @@ def test_init_plotscript(default_conf, mocker, testdatadir):
     default_conf['timerange'] = "20180110-20180112"
     default_conf['trade_source'] = "file"
     default_conf['timeframe'] = "5m"
-    default_conf["datadir"] = testdatadir
-    default_conf['exportfilename'] = testdatadir / "backtest-result_new.json"
+    default_conf['exportfilename'] = testdatadir / "backtest-result.json"
     supported_markets = ["TRX/BTC", "ADA/BTC"]
     ret = init_plotscript(default_conf, supported_markets)
     assert "ohlcv" in ret
@@ -63,7 +62,7 @@ def test_init_plotscript(default_conf, mocker, testdatadir):
 
 def test_add_indicators(default_conf, testdatadir, caplog):
     pair = "UNITTEST/BTC"
-    timerange = TimeRange(None, 'line', 0, -1000)
+    timerange = TimeRange()
 
     data = history.load_pair_history(pair=pair, timeframe='1m',
                                      datadir=testdatadir, timerange=timerange)
@@ -72,7 +71,7 @@ def test_add_indicators(default_conf, testdatadir, caplog):
 
     strategy = StrategyResolver.load_strategy(default_conf)
 
-    # Generate buy/sell signals and indicators
+    # Generate entry/exit signals and indicators
     data = strategy.analyze_ticker(data, {'pair': pair})
     fig = generate_empty_figure()
 
@@ -113,7 +112,7 @@ def test_add_areas(default_conf, testdatadir, caplog):
     ind_plain = {"macd": {"fill_to": "macdhist"}}
     strategy = StrategyResolver.load_strategy(default_conf)
 
-    # Generate buy/sell signals and indicators
+    # Generate entry/exit signals and indicators
     data = strategy.analyze_ticker(data, {'pair': pair})
     fig = generate_empty_figure()
 
@@ -158,31 +157,31 @@ def test_plot_trades(testdatadir, caplog):
     assert fig == fig1
     assert log_has("No trades found.", caplog)
     pair = "ADA/BTC"
-    filename = testdatadir / "backtest_results/backtest-result_new.json"
+    filename = testdatadir / "backtest_results/backtest-result.json"
     trades = load_backtest_data(filename)
     trades = trades.loc[trades['pair'] == pair]
 
     fig = plot_trades(fig, trades)
     figure = fig1.layout.figure
 
-    # Check buys - color, should be in first graph, ...
-    trade_buy = find_trace_in_fig_data(figure.data, 'Trade buy')
-    assert isinstance(trade_buy, go.Scatter)
-    assert trade_buy.yaxis == 'y'
-    assert len(trades) == len(trade_buy.x)
-    assert trade_buy.marker.color == 'cyan'
-    assert trade_buy.marker.symbol == 'circle-open'
-    assert trade_buy.text[0] == '3.99%, buy_tag, roi, 15 min'
+    # Check entry - color, should be in first graph, ...
+    trade_entries = find_trace_in_fig_data(figure.data, 'Trade entry')
+    assert isinstance(trade_entries, go.Scatter)
+    assert trade_entries.yaxis == 'y'
+    assert len(trades) == len(trade_entries.x)
+    assert trade_entries.marker.color == 'cyan'
+    assert trade_entries.marker.symbol == 'circle-open'
+    assert trade_entries.text[0] == '3.99%, buy_tag, roi, 15 min'
 
-    trade_sell = find_trace_in_fig_data(figure.data, 'Sell - Profit')
-    assert isinstance(trade_sell, go.Scatter)
-    assert trade_sell.yaxis == 'y'
-    assert len(trades.loc[trades['profit_ratio'] > 0]) == len(trade_sell.x)
-    assert trade_sell.marker.color == 'green'
-    assert trade_sell.marker.symbol == 'square-open'
-    assert trade_sell.text[0] == '3.99%, buy_tag, roi, 15 min'
+    trade_exit = find_trace_in_fig_data(figure.data, 'Exit - Profit')
+    assert isinstance(trade_exit, go.Scatter)
+    assert trade_exit.yaxis == 'y'
+    assert len(trades.loc[trades['profit_ratio'] > 0]) == len(trade_exit.x)
+    assert trade_exit.marker.color == 'green'
+    assert trade_exit.marker.symbol == 'square-open'
+    assert trade_exit.text[0] == '3.99%, buy_tag, roi, 15 min'
 
-    trade_sell_loss = find_trace_in_fig_data(figure.data, 'Sell - Loss')
+    trade_sell_loss = find_trace_in_fig_data(figure.data, 'Exit - Loss')
     assert isinstance(trade_sell_loss, go.Scatter)
     assert trade_sell_loss.yaxis == 'y'
     assert len(trades.loc[trades['profit_ratio'] <= 0]) == len(trade_sell_loss.x)
@@ -299,7 +298,7 @@ def test_generate_plot_file(mocker, caplog):
 
 
 def test_add_profit(testdatadir):
-    filename = testdatadir / "backtest_results/backtest-result_new.json"
+    filename = testdatadir / "backtest_results/backtest-result.json"
     bt_data = load_backtest_data(filename)
     timerange = TimeRange.parse_timerange("20180110-20180112")
 
@@ -319,7 +318,7 @@ def test_add_profit(testdatadir):
 
 
 def test_generate_profit_graph(testdatadir):
-    filename = testdatadir / "backtest_results/backtest-result_new.json"
+    filename = testdatadir / "backtest_results/backtest-result.json"
     trades = load_backtest_data(filename)
     timerange = TimeRange.parse_timerange("20180110-20180112")
     pairs = ["TRX/BTC", "XLM/BTC"]
@@ -354,7 +353,7 @@ def test_generate_profit_graph(testdatadir):
 
     profit = find_trace_in_fig_data(figure.data, "Profit")
     assert isinstance(profit, go.Scatter)
-    drawdown = find_trace_in_fig_data(figure.data, "Max drawdown 35.69%")
+    drawdown = find_trace_in_fig_data(figure.data, "Max drawdown 73.89%")
     assert isinstance(drawdown, go.Scatter)
     parallel = find_trace_in_fig_data(figure.data, "Parallel trades")
     assert isinstance(parallel, go.Scatter)
@@ -394,8 +393,7 @@ def test_load_and_plot_trades(default_conf, mocker, caplog, testdatadir):
     patch_exchange(mocker)
 
     default_conf['trade_source'] = 'file'
-    default_conf["datadir"] = testdatadir
-    default_conf['exportfilename'] = testdatadir / "backtest-result_new.json"
+    default_conf['exportfilename'] = testdatadir / "backtest-result.json"
     default_conf['indicators1'] = ["sma5", "ema10"]
     default_conf['indicators2'] = ["macd"]
     default_conf['pairs'] = ["ETH/BTC", "LTC/BTC"]
@@ -451,7 +449,6 @@ def test_start_plot_profit_error(mocker):
 def test_plot_profit(default_conf, mocker, testdatadir):
     patch_exchange(mocker)
     default_conf['trade_source'] = 'file'
-    default_conf['datadir'] = testdatadir
     default_conf['exportfilename'] = testdatadir / 'backtest-result_test_nofile.json'
     default_conf['pairs'] = ['ETH/BTC', 'LTC/BTC']
 
@@ -466,7 +463,7 @@ def test_plot_profit(default_conf, mocker, testdatadir):
                        match=r"No trades found, cannot generate Profit-plot.*"):
         plot_profit(default_conf)
 
-    default_conf['exportfilename'] = testdatadir / "backtest_results/backtest-result_new.json"
+    default_conf['exportfilename'] = testdatadir / "backtest_results/backtest-result.json"
 
     plot_profit(default_conf)
 

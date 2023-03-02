@@ -9,9 +9,10 @@ dependencies:
     - pandas
     - pip
 
+    - py-find-1st
     - aiohttp
     - SQLAlchemy
-    - python-telegram-bot
+    - python-telegram-bot<20.0.0
     - arrow
     - cachetools
     - requests
@@ -33,13 +34,13 @@ dependencies:
     - schedule
     - python-dateutil
     - joblib
+    - pyarrow
 
 
     # ============================
     # 2/4 req dev
 
     - coveralls
-    - flake8
     - mypy
     - pytest
     - pytest-asyncio
@@ -52,7 +53,7 @@ dependencies:
     # 3/4 req hyperopt
 
     - scipy
-    - scikit-learn
+    - scikit-learn<1.2.0
     - filelock
     - scikit-optimize
     - progressbar2
@@ -64,10 +65,10 @@ dependencies:
 
     - pip:
         - pycoingecko
-        - py_find_1st
+        # - py_find_1st
         - tables
         - pytest-random-order
         - ccxt
-        - flake8-tidy-imports
+        - ruff
         - -e .
     # - python-rapidjso

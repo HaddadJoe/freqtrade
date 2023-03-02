@@ -4,12 +4,11 @@ from typing import Dict, List, Optional, Tuple
 import ccxt
 
 from freqtrade.constants import BuySell
-from freqtrade.enums import MarginMode, TradingMode
-from freqtrade.enums.candletype import CandleType
+from freqtrade.enums import CandleType, MarginMode, TradingMode
+from freqtrade.enums.pricetype import PriceType
 from freqtrade.exceptions import DDosProtection, OperationalException, TemporaryError
-from freqtrade.exchange import Exchange
+from freqtrade.exchange import Exchange, date_minus_candles
 from freqtrade.exchange.common import retrier
-from freqtrade.exchange.exchange import date_minus_candles
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +27,13 @@ class Okx(Exchange):
     }
     _ft_has_futures: Dict = {
         "tickers_have_quoteVolume": False,
+        "fee_cost_in_contracts": True,
+        "stop_price_type_field": "tpTriggerPxType",
+        "stop_price_type_value_mapping": {
+            PriceType.LAST: "last",
+            PriceType.MARK: "index",
+            PriceType.INDEX: "mark",
+            },
     }
 
     _supported_trading_mode_margin_pairs: List[Tuple[TradingMode, MarginMode]] = [
@@ -38,6 +44,8 @@ class Okx(Exchange):
     ]
 
     net_only = True
+
+    _ccxt_params: Dict = {'options': {'brokerId': 'ffb5405ad327SUDE'}}
 
     def ohlcv_candle_limit(
             self, timeframe: str, candle_type: CandleType, since_ms: Optional[int] = None) -> int:
@@ -70,13 +78,15 @@ class Okx(Exchange):
         try:
             if self.trading_mode == TradingMode.FUTURES and not self._config['dry_run']:
                 accounts = self._api.fetch_accounts()
+                self._log_exchange_response('fetch_accounts', accounts)
                 if len(accounts) > 0:
                     self.net_only = accounts[0].get('info', {}).get('posMode') == 'net_mode'
         except ccxt.DDoSProtection as e:
             raise DDosProtection(e) from e
         except (ccxt.NetworkError, ccxt.ExchangeError) as e:
             raise TemporaryError(
-                f'Could not set leverage due to {e.__class__.__name__}. Message: {e}') from e
+                f'Error in additional_exchange_init due to {e.__class__.__name__}. Message: {e}'
+                ) from e
         except ccxt.BaseError as e:
             raise OperationalException(e) from e
 
@@ -96,7 +106,7 @@ class Okx(Exchange):
         ordertype: str,
         leverage: float,
         reduceOnly: bool,
-        time_in_force: str = 'gtc',
+        time_in_force: str = 'GTC',
     ) -> Dict:
         params = super()._get_params(
             side=side,
@@ -115,13 +125,15 @@ class Okx(Exchange):
         if self.trading_mode != TradingMode.SPOT and self.margin_mode is not None:
             try:
                 # TODO-lev: Test me properly (check mgnMode passed)
-                self._api.set_leverage(
+                res = self._api.set_leverage(
                     leverage=leverage,
                     symbol=pair,
                     params={
                         "mgnMode": self.margin_mode.value,
                         "posSide": self._get_posSide(side, False),
                     })
+                self._log_exchange_response('set_leverage', res)
+
             except ccxt.DDoSProtection as e:
                 raise DDosProtection(e) from e
             except (ccxt.NetworkError, ccxt.ExchangeError) as e:
@@ -144,4 +156,4 @@ class Okx(Exchange):
             return float('inf')
 
         pair_tiers = self._leverage_tiers[pair]
-        return pair_tiers[-1]['max'] / leverage
+        return pair_tiers[-1]['maxNotional'] / leverage

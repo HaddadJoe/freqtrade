@@ -30,6 +30,9 @@ class StrategyTestV3(IStrategy):
         "0": 0.04
     }
 
+    # Optimal max_open_trades for the strategy
+    max_open_trades = -1
+
     # Optimal stoploss designed for the strategy
     stoploss = -0.10
 
@@ -178,20 +181,23 @@ class StrategyTestV3(IStrategy):
         return dataframe
 
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
-                 proposed_leverage: float, max_leverage: float, side: str,
-                 **kwargs) -> float:
+                 proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
+                 side: str, **kwargs) -> float:
         # Return 3.0 in all cases.
         # Bot-logic must make sure it's an allowed leverage and eventually adjust accordingly.
 
         return 3.0
 
-    def adjust_trade_position(self, trade: Trade, current_time: datetime, current_rate: float,
-                              current_profit: float,
-                              min_stake: Optional[float], max_stake: float, **kwargs):
+    def adjust_trade_position(self, trade: Trade, current_time: datetime,
+                              current_rate: float, current_profit: float,
+                              min_stake: Optional[float], max_stake: float,
+                              current_entry_rate: float, current_exit_rate: float,
+                              current_entry_profit: float, current_exit_profit: float,
+                              **kwargs) -> Optional[float]:
 
         if current_profit < -0.0075:
             orders = trade.select_filled_orders(trade.entry_side)
-            return round(orders[0].cost, 0)
+            return round(orders[0].safe_cost, 0)
 
         return None
 

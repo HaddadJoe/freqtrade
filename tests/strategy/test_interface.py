@@ -11,15 +11,18 @@ from pandas import DataFrame
 from freqtrade.configuration import TimeRange
 from freqtrade.data.dataprovider import DataProvider
 from freqtrade.data.history import load_data
-from freqtrade.enums import ExitCheckTuple, ExitType, SignalDirection
+from freqtrade.enums import ExitCheckTuple, ExitType, HyperoptState, SignalDirection
 from freqtrade.exceptions import OperationalException, StrategyError
+from freqtrade.optimize.hyperopt_tools import HyperoptStateContainer
 from freqtrade.optimize.space import SKDecimal
 from freqtrade.persistence import PairLocks, Trade
 from freqtrade.resolvers import StrategyResolver
+from freqtrade.strategy.hyper import detect_parameters
 from freqtrade.strategy.parameters import (BaseParameter, BooleanParameter, CategoricalParameter,
                                            DecimalParameter, IntParameter, RealParameter)
 from freqtrade.strategy.strategy_wrapper import strategy_safe_wrapper
-from tests.conftest import CURRENT_TEST_STRATEGY, TRADE_SIDES, log_has, log_has_re
+from tests.conftest import (CURRENT_TEST_STRATEGY, TRADE_SIDES, create_mock_trades, log_has,
+                            log_has_re)
 
 from .strats.strategy_test_v3 import StrategyTestV3
 
@@ -211,12 +214,12 @@ def test_ignore_expired_candle(default_conf):
 
     current_time = latest_date + timedelta(seconds=30 + 300)
 
-    assert not strategy.ignore_expired_candle(
+    assert strategy.ignore_expired_candle(
         latest_date=latest_date,
         current_time=current_time,
         timeframe_seconds=300,
         enter=True
-    ) is True
+    ) is not True
 
 
 def test_assert_df_raise(mocker, caplog, ohlcv_history):
@@ -285,7 +288,26 @@ def test_advise_all_indicators(default_conf, testdatadir) -> None:
     data = load_data(testdatadir, '1m', ['UNITTEST/BTC'], timerange=timerange,
                      fill_up_missing=True)
     processed = strategy.advise_all_indicators(data)
-    assert len(processed['UNITTEST/BTC']) == 102  # partial candle was removed
+    assert len(processed['UNITTEST/BTC']) == 103
+
+
+def test_populate_any_indicators(default_conf, testdatadir) -> None:
+    strategy = StrategyResolver.load_strategy(default_conf)
+
+    timerange = TimeRange.parse_timerange('1510694220-1510700340')
+    data = load_data(testdatadir, '1m', ['UNITTEST/BTC'], timerange=timerange,
+                     fill_up_missing=True)
+    processed = strategy.populate_any_indicators('UNITTEST/BTC', data, '5m')
+    assert processed == data
+    assert id(processed) == id(data)
+    assert len(processed['UNITTEST/BTC']) == 103
+
+
+def test_freqai_not_initialized(default_conf) -> None:
+    strategy = StrategyResolver.load_strategy(default_conf)
+    strategy.ft_bot_start()
+    with pytest.raises(OperationalException, match=r'freqAI is not enabled\.'):
+        strategy.freqai.start()
 
 
 def test_advise_all_indicators_copy(mocker, default_conf, testdatadir) -> None:
@@ -406,29 +428,32 @@ def test_min_roi_reached3(default_conf, fee) -> None:
 
 
 @pytest.mark.parametrize(
-    'profit,adjusted,expected,trailing,custom,profit2,adjusted2,expected2,custom_stop', [
+    'profit,adjusted,expected,liq,trailing,custom,profit2,adjusted2,expected2,custom_stop', [
         # Profit, adjusted stoploss(absolute), profit for 2nd call, enable trailing,
         #   enable custom stoploss, expected after 1st call, expected after 2nd call
-        (0.2, 0.9, ExitType.NONE, False, False, 0.3, 0.9, ExitType.NONE, None),
-        (0.2, 0.9, ExitType.NONE, False, False, -0.2, 0.9, ExitType.STOP_LOSS, None),
-        (0.2, 1.14, ExitType.NONE, True, False, 0.05, 1.14, ExitType.TRAILING_STOP_LOSS, None),
-        (0.01, 0.96, ExitType.NONE, True, False, 0.05, 1, ExitType.NONE, None),
-        (0.05, 1, ExitType.NONE, True, False, -0.01, 1, ExitType.TRAILING_STOP_LOSS, None),
+        (0.2, 0.9, ExitType.NONE, None, False, False, 0.3, 0.9, ExitType.NONE, None),
+        (0.2, 0.9, ExitType.NONE, None, False, False, -0.2, 0.9, ExitType.STOP_LOSS, None),
+        (0.2, 0.9, ExitType.NONE, 0.8, False, False, -0.2, 0.9, ExitType.LIQUIDATION, None),
+        (0.2, 1.14, ExitType.NONE, None, True, False, 0.05, 1.14, ExitType.TRAILING_STOP_LOSS,
+         None),
+        (0.01, 0.96, ExitType.NONE, None, True, False, 0.05, 1, ExitType.NONE, None),
+        (0.05, 1, ExitType.NONE, None, True, False, -0.01, 1, ExitType.TRAILING_STOP_LOSS, None),
         # Default custom case - trails with 10%
-        (0.05, 0.95, ExitType.NONE, False, True, -0.02, 0.95, ExitType.NONE, None),
-        (0.05, 0.95, ExitType.NONE, False, True, -0.06, 0.95, ExitType.TRAILING_STOP_LOSS, None),
-        (0.05, 1, ExitType.NONE, False, True, -0.06, 1, ExitType.TRAILING_STOP_LOSS,
+        (0.05, 0.95, ExitType.NONE, None, False, True, -0.02, 0.95, ExitType.NONE, None),
+        (0.05, 0.95, ExitType.NONE, None, False, True, -0.06, 0.95, ExitType.TRAILING_STOP_LOSS,
+         None),
+        (0.05, 1, ExitType.NONE, None, False, True, -0.06, 1, ExitType.TRAILING_STOP_LOSS,
          lambda **kwargs: -0.05),
-        (0.05, 1, ExitType.NONE, False, True, 0.09, 1.04, ExitType.NONE,
+        (0.05, 1, ExitType.NONE, None, False, True, 0.09, 1.04, ExitType.NONE,
          lambda **kwargs: -0.05),
-        (0.05, 0.95, ExitType.NONE, False, True, 0.09, 0.98, ExitType.NONE,
+        (0.05, 0.95, ExitType.NONE, None, False, True, 0.09, 0.98, ExitType.NONE,
          lambda current_profit, **kwargs: -0.1 if current_profit < 0.6 else -(current_profit * 2)),
         # Error case - static stoploss in place
-        (0.05, 0.9, ExitType.NONE, False, True, 0.09, 0.9, ExitType.NONE,
+        (0.05, 0.9, ExitType.NONE, None, False, True, 0.09, 0.9, ExitType.NONE,
          lambda **kwargs: None),
     ])
-def test_stop_loss_reached(default_conf, fee, profit, adjusted, expected, trailing, custom,
-                           profit2, adjusted2, expected2, custom_stop) -> None:
+def test_ft_stoploss_reached(default_conf, fee, profit, adjusted, expected, liq, trailing, custom,
+                             profit2, adjusted2, expected2, custom_stop) -> None:
 
     strategy = StrategyResolver.load_strategy(default_conf)
     trade = Trade(
@@ -440,6 +465,7 @@ def test_stop_loss_reached(default_conf, fee, profit, adjusted, expected, traili
         fee_close=fee.return_value,
         exchange='binance',
         open_rate=1,
+        liquidation_price=liq,
     )
     trade.adjust_min_max_rates(trade.open_rate, trade.open_rate)
     strategy.trailing_stop = trailing
@@ -451,9 +477,9 @@ def test_stop_loss_reached(default_conf, fee, profit, adjusted, expected, traili
 
     now = arrow.utcnow().datetime
     current_rate = trade.open_rate * (1 + profit)
-    sl_flag = strategy.stop_loss_reached(current_rate=current_rate, trade=trade,
-                                         current_time=now, current_profit=profit,
-                                         force_stoploss=0, high=None)
+    sl_flag = strategy.ft_stoploss_reached(current_rate=current_rate, trade=trade,
+                                           current_time=now, current_profit=profit,
+                                           force_stoploss=0, high=None)
     assert isinstance(sl_flag, ExitCheckTuple)
     assert sl_flag.exit_type == expected
     if expected == ExitType.NONE:
@@ -463,9 +489,9 @@ def test_stop_loss_reached(default_conf, fee, profit, adjusted, expected, traili
     assert round(trade.stop_loss, 2) == adjusted
     current_rate2 = trade.open_rate * (1 + profit2)
 
-    sl_flag = strategy.stop_loss_reached(current_rate=current_rate2, trade=trade,
-                                         current_time=now, current_profit=profit2,
-                                         force_stoploss=0, high=None)
+    sl_flag = strategy.ft_stoploss_reached(current_rate=current_rate2, trade=trade,
+                                           current_time=now, current_profit=profit2,
+                                           force_stoploss=0, high=None)
     assert sl_flag.exit_type == expected2
     if expected2 == ExitType.NONE:
         assert sl_flag.exit_flag is False
@@ -553,7 +579,7 @@ def test_should_sell(default_conf, fee) -> None:
     assert res == [ExitCheckTuple(exit_type=ExitType.ROI)]
 
     strategy.min_roi_reached = MagicMock(return_value=True)
-    strategy.stop_loss_reached = MagicMock(
+    strategy.ft_stoploss_reached = MagicMock(
         return_value=ExitCheckTuple(exit_type=ExitType.STOP_LOSS))
 
     res = strategy.should_exit(trade, 1, now,
@@ -577,7 +603,7 @@ def test_should_sell(default_conf, fee) -> None:
         ExitCheckTuple(exit_type=ExitType.ROI),
         ]
 
-    strategy.stop_loss_reached = MagicMock(
+    strategy.ft_stoploss_reached = MagicMock(
             return_value=ExitCheckTuple(exit_type=ExitType.TRAILING_STOP_LOSS))
     # Regular exit signal
     res = strategy.should_exit(trade, 1, now,
@@ -614,6 +640,7 @@ def test_leverage_callback(default_conf, side) -> None:
         proposed_leverage=1.0,
         max_leverage=5.0,
         side=side,
+        entry_tag=None,
         ) == 1
 
     default_conf['strategy'] = CURRENT_TEST_STRATEGY
@@ -625,6 +652,7 @@ def test_leverage_callback(default_conf, side) -> None:
         proposed_leverage=1.0,
         max_leverage=5.0,
         side=side,
+        entry_tag='entry_tag_test',
         ) == 3
 
 
@@ -809,8 +837,32 @@ def test_strategy_safe_wrapper(value):
     assert ret == value
 
 
+@pytest.mark.usefixtures("init_persistence")
+def test_strategy_safe_wrapper_trade_copy(fee):
+    create_mock_trades(fee)
+
+    def working_method(trade):
+        assert len(trade.orders) > 0
+        assert trade.orders
+        trade.orders = []
+        assert len(trade.orders) == 0
+        return trade
+
+    trade = Trade.get_open_trades()[0]
+    # Don't assert anything before strategy_wrapper.
+    # This ensures that relationship loading works correctly.
+    ret = strategy_safe_wrapper(working_method, message='DeadBeef')(trade=trade)
+    assert isinstance(ret, Trade)
+    assert id(trade) != id(ret)
+    # Did not modify the original order
+    assert len(trade.orders) > 0
+    assert len(ret.orders) == 0
+
+
 def test_hyperopt_parameters():
+    HyperoptStateContainer.set_state(HyperoptState.INDICATORS)
     from skopt.space import Categorical, Integer, Real
+
     with pytest.raises(OperationalException, match=r"Name is determined.*"):
         IntParameter(low=0, high=5, default=1, name='hello')
 
@@ -888,12 +940,18 @@ def test_hyperopt_parameters():
 
     assert list(boolpar.range) == [True, False]
 
+    HyperoptStateContainer.set_state(HyperoptState.OPTIMIZE)
+    assert len(list(intpar.range)) == 1
+    assert len(list(fltpar.range)) == 1
+    assert len(list(catpar.range)) == 1
+    assert len(list(boolpar.range)) == 1
+
 
 def test_auto_hyperopt_interface(default_conf):
-    default_conf.update({'strategy': 'HyperoptableStrategy'})
+    default_conf.update({'strategy': 'HyperoptableStrategyV2'})
     PairLocks.timeframe = default_conf['timeframe']
     strategy = StrategyResolver.load_strategy(default_conf)
-
+    strategy.ft_bot_start()
     with pytest.raises(OperationalException):
         next(strategy.enumerate_parameters('deadBeef'))
 
@@ -908,15 +966,18 @@ def test_auto_hyperopt_interface(default_conf):
     assert strategy.sell_minusdi.value == 0.5
     all_params = strategy.detect_all_parameters()
     assert isinstance(all_params, dict)
-    assert len(all_params['buy']) == 2
+    # Only one buy param at class level
+    assert len(all_params['buy']) == 1
+    # Running detect params at instance level reveals both parameters.
+    assert len(list(detect_parameters(strategy, 'buy'))) == 2
     assert len(all_params['sell']) == 2
     # Number of Hyperoptable parameters
-    assert all_params['count'] == 6
+    assert all_params['count'] == 5
 
     strategy.__class__.sell_rsi = IntParameter([0, 10], default=5, space='buy')
 
     with pytest.raises(OperationalException, match=r"Inconclusive parameter.*"):
-        [x for x in strategy.detect_parameters('sell')]
+        [x for x in detect_parameters(strategy, 'sell')]
 
 
 def test_auto_hyperopt_interface_loadparams(default_conf, mocker, caplog):

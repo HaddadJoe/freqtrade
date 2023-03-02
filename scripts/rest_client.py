@@ -14,6 +14,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import rapidjson
@@ -36,7 +37,7 @@ class FtRestClient():
         self._session = requests.Session()
         self._session.auth = (username, password)
 
-    def _call(self, method, apipath, params: dict = None, data=None, files=None):
+    def _call(self, method, apipath, params: Optional[dict] = None, data=None, files=None):
 
         if str(method).upper() not in ('GET', 'POST', 'PUT', 'DELETE'):
             raise ValueError(f'invalid method <{method}>')
@@ -60,13 +61,13 @@ class FtRestClient():
         except ConnectionError:
             logger.warning("Connection error")
 
-    def _get(self, apipath, params: dict = None):
+    def _get(self, apipath, params: Optional[dict] = None):
         return self._call("GET", apipath, params=params)
 
-    def _delete(self, apipath, params: dict = None):
+    def _delete(self, apipath, params: Optional[dict] = None):
         return self._call("DELETE", apipath, params=params)
 
-    def _post(self, apipath, params: dict = None, data: dict = None):
+    def _post(self, apipath, params: Optional[dict] = None, data: Optional[dict] = None):
         return self._call("POST", apipath, params=params, data=data)
 
     def start(self):
@@ -176,8 +177,7 @@ class FtRestClient():
         return self._get("version")
 
     def show_config(self):
-        """
-        Returns part of the configuration, relevant for trading operations.
+        """ Returns part of the configuration, relevant for trading operations.
         :return: json object containing the version
         """
         return self._get("show_config")
@@ -231,6 +231,14 @@ class FtRestClient():
         """
         return self._delete(f"trades/{trade_id}")
 
+    def cancel_open_order(self, trade_id):
+        """Cancel open order for trade.
+
+        :param trade_id: Cancels open orders for this trade.
+        :return: json object
+        """
+        return self._delete(f"trades/{trade_id}/open-order")
+
     def whitelist(self):
         """Show the current whitelist.
 
@@ -261,7 +269,7 @@ class FtRestClient():
                 }
         return self._post("forcebuy", data=data)
 
-    def force_enter(self, pair, side, price=None):
+    def forceenter(self, pair, side, price=None):
         """Force entering a trade
 
         :param pair: Pair to buy (ETH/BTC)
@@ -273,16 +281,22 @@ class FtRestClient():
                 "side": side,
                 "price": price,
                 }
-        return self._post("force_enter", data=data)
+        return self._post("forceenter", data=data)
 
-    def forceexit(self, tradeid):
+    def forceexit(self, tradeid, ordertype=None, amount=None):
         """Force-exit a trade.
 
         :param tradeid: Id of the trade (can be received via status command)
+        :param ordertype: Order type to use (must be market or limit)
+        :param amount: Amount to sell. Full sell if not given
         :return: json object
         """
 
-        return self._post("forceexit", data={"tradeid": tradeid})
+        return self._post("forceexit", data={
+            "tradeid": tradeid,
+            "ordertype": ordertype,
+            "amount": amount,
+            })
 
     def strategies(self):
         """Lists available strategies
@@ -354,6 +368,13 @@ class FtRestClient():
         :return: json object
         """
         return self._get("sysinfo")
+
+    def health(self):
+        """Provides a quick health check of the running bot.
+
+        :return: json object
+        """
+        return self._get("health")
 
 
 def add_arguments():

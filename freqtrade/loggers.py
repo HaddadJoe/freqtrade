@@ -2,8 +2,8 @@ import logging
 import sys
 from logging import Formatter
 from logging.handlers import BufferingHandler, RotatingFileHandler, SysLogHandler
-from typing import Any, Dict
 
+from freqtrade.constants import Config
 from freqtrade.exceptions import OperationalException
 
 
@@ -73,7 +73,7 @@ def setup_logging_pre() -> None:
     )
 
 
-def setup_logging(config: Dict[str, Any]) -> None:
+def setup_logging(config: Config) -> None:
     """
     Process -v/--verbose, --logfile options
     """
@@ -103,9 +103,9 @@ def setup_logging(config: Dict[str, Any]) -> None:
             logging.root.addHandler(handler_sl)
         elif s[0] == 'journald':  # pragma: no cover
             try:
-                from systemd.journal import JournaldLogHandler
+                from cysystemd.journal import JournaldLogHandler
             except ImportError:
-                raise OperationalException("You need the systemd python package be installed in "
+                raise OperationalException("You need the cysystemd python package be installed in "
                                            "order to use logging to journald.")
             handler_jd = get_existing_handlers(JournaldLogHandler)
             if handler_jd:

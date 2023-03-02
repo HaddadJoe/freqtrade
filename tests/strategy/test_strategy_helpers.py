@@ -1,5 +1,3 @@
-from math import isclose
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,29 +5,8 @@ import pytest
 from freqtrade.data.dataprovider import DataProvider
 from freqtrade.enums import CandleType
 from freqtrade.resolvers.strategy_resolver import StrategyResolver
-from freqtrade.strategy import (merge_informative_pair, stoploss_from_absolute, stoploss_from_open,
-                                timeframe_to_minutes)
-from tests.conftest import get_patched_exchange
-
-
-def generate_test_data(timeframe: str, size: int, start: str = '2020-07-05'):
-    np.random.seed(42)
-    tf_mins = timeframe_to_minutes(timeframe)
-
-    base = np.random.normal(20, 2, size=size)
-
-    date = pd.date_range(start, periods=size, freq=f'{tf_mins}min', tz='UTC')
-    df = pd.DataFrame({
-        'date': date,
-        'open': base,
-        'high': base + np.random.normal(2, 1, size=size),
-        'low': base - np.random.normal(2, 1, size=size),
-        'close': base + np.random.normal(0, 1, size=size),
-        'volume': np.random.normal(200, size=size)
-    }
-    )
-    df = df.dropna()
-    return df
+from freqtrade.strategy import merge_informative_pair, stoploss_from_absolute, stoploss_from_open
+from tests.conftest import generate_test_data, get_patched_exchange
 
 
 def test_merge_informative_pair():
@@ -119,53 +96,77 @@ def test_merge_informative_pair_lower():
         merge_informative_pair(data, informative, '1h', '15m', ffill=True)
 
 
-def test_stoploss_from_open():
+def test_merge_informative_pair_suffix():
+    data = generate_test_data('15m', 20)
+    informative = generate_test_data('1h', 20)
+
+    result = merge_informative_pair(data, informative, '15m', '1h',
+                                    append_timeframe=False, suffix="suf")
+
+    assert 'date' in result.columns
+    assert result['date'].equals(data['date'])
+    assert 'date_suf' in result.columns
+
+    assert 'open_suf' in result.columns
+    assert 'open_1h' not in result.columns
+
+
+def test_merge_informative_pair_suffix_append_timeframe():
+    data = generate_test_data('15m', 20)
+    informative = generate_test_data('1h', 20)
+
+    with pytest.raises(ValueError, match=r"You can not specify `append_timeframe` .*"):
+        merge_informative_pair(data, informative, '15m', '1h', suffix="suf")
+
+
+@pytest.mark.parametrize("side,profitrange", [
+    # profit range for long is [-1, inf] while for shorts is [-inf, 1]
+    ("long", [-0.99, 2, 30]),
+    ("short", [-2.0, 0.99, 30]),
+])
+def test_stoploss_from_open(side, profitrange):
     open_price_ranges = [
         [0.01, 1.00, 30],
         [1, 100, 30],
         [100, 10000, 30],
     ]
-    # profit range for long is [-1, inf] while for shorts is [-inf, 1]
-    current_profit_range_dict = {'long': [-0.99, 2, 30], 'short': [-2.0, 0.99, 30]}
-    desired_stop_range = [-0.50, 0.50, 30]
 
-    for side, current_profit_range in current_profit_range_dict.items():
-        for open_range in open_price_ranges:
-            for open_price in np.linspace(*open_range):
-                for desired_stop in np.linspace(*desired_stop_range):
+    for open_range in open_price_ranges:
+        for open_price in np.linspace(*open_range):
+            for desired_stop in np.linspace(-0.50, 0.50, 30):
 
+                if side == 'long':
+                    # -1 is not a valid current_profit, should return 1
+                    assert stoploss_from_open(desired_stop, -1) == 1
+                else:
+                    # 1 is not a valid current_profit for shorts, should return 1
+                    assert stoploss_from_open(desired_stop, 1, True) == 1
+
+                for current_profit in np.linspace(*profitrange):
                     if side == 'long':
-                        # -1 is not a valid current_profit, should return 1
-                        assert stoploss_from_open(desired_stop, -1) == 1
+                        current_price = open_price * (1 + current_profit)
+                        expected_stop_price = open_price * (1 + desired_stop)
+                        stoploss = stoploss_from_open(desired_stop, current_profit)
+                        stop_price = current_price * (1 - stoploss)
                     else:
-                        # 1 is not a valid current_profit for shorts, should return 1
-                        assert stoploss_from_open(desired_stop, 1, True) == 1
+                        current_price = open_price * (1 - current_profit)
+                        expected_stop_price = open_price * (1 - desired_stop)
+                        stoploss = stoploss_from_open(desired_stop, current_profit, True)
+                        stop_price = current_price * (1 + stoploss)
 
-                    for current_profit in np.linspace(*current_profit_range):
-                        if side == 'long':
-                            current_price = open_price * (1 + current_profit)
-                            expected_stop_price = open_price * (1 + desired_stop)
-                            stoploss = stoploss_from_open(desired_stop, current_profit)
-                            stop_price = current_price * (1 - stoploss)
-                        else:
-                            current_price = open_price * (1 - current_profit)
-                            expected_stop_price = open_price * (1 - desired_stop)
-                            stoploss = stoploss_from_open(desired_stop, current_profit, True)
-                            stop_price = current_price * (1 + stoploss)
+                    assert stoploss >= 0
+                    # Technically the formula can yield values greater than 1 for shorts
+                    # eventhough it doesn't make sense because the position would be liquidated
+                    if side == 'long':
+                        assert stoploss <= 1
 
-                        assert stoploss >= 0
-                        # Technically the formula can yield values greater than 1 for shorts
-                        # eventhough it doesn't make sense because the position would be liquidated
-                        if side == 'long':
-                            assert stoploss <= 1
-
-                        # there is no correct answer if the expected stop price is above
-                        # the current price
-                        if ((side == 'long' and expected_stop_price > current_price)
-                                or (side == 'short' and expected_stop_price < current_price)):
-                            assert stoploss == 0
-                        else:
-                            assert isclose(stop_price, expected_stop_price, rel_tol=0.00001)
+                    # there is no correct answer if the expected stop price is above
+                    # the current price
+                    if ((side == 'long' and expected_stop_price > current_price)
+                            or (side == 'short' and expected_stop_price < current_price)):
+                        assert stoploss == 0
+                    else:
+                        assert pytest.approx(stop_price) == expected_stop_price
 
 
 def test_stoploss_from_absolute():

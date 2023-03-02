@@ -3,9 +3,9 @@
 """
 bot constants
 """
-from typing import List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
-from freqtrade.enums import CandleType
+from freqtrade.enums import CandleType, PriceType, RPCMessageType
 
 
 DEFAULT_CONFIG = 'config.json'
@@ -23,19 +23,22 @@ REQUIRED_ORDERTIF = ['entry', 'exit']
 REQUIRED_ORDERTYPES = ['entry', 'exit', 'stoploss', 'stoploss_on_exchange']
 PRICING_SIDES = ['ask', 'bid', 'same', 'other']
 ORDERTYPE_POSSIBILITIES = ['limit', 'market']
-ORDERTIF_POSSIBILITIES = ['gtc', 'fok', 'ioc']
+_ORDERTIF_POSSIBILITIES = ['GTC', 'FOK', 'IOC', 'PO']
+ORDERTIF_POSSIBILITIES = _ORDERTIF_POSSIBILITIES + [t.lower() for t in _ORDERTIF_POSSIBILITIES]
+STOPLOSS_PRICE_TYPES = [p for p in PriceType]
 HYPEROPT_LOSS_BUILTIN = ['ShortTradeDurHyperOptLoss', 'OnlyProfitHyperOptLoss',
                          'SharpeHyperOptLoss', 'SharpeHyperOptLossDaily',
                          'SortinoHyperOptLoss', 'SortinoHyperOptLossDaily',
                          'CalmarHyperOptLoss',
                          'MaxDrawDownHyperOptLoss', 'MaxDrawDownRelativeHyperOptLoss',
                          'ProfitDrawDownHyperOptLoss']
-AVAILABLE_PAIRLISTS = ['StaticPairList', 'VolumePairList',
+AVAILABLE_PAIRLISTS = ['StaticPairList', 'VolumePairList', 'ProducerPairList', 'RemotePairList',
                        'AgeFilter', 'OffsetFilter', 'PerformanceFilter',
                        'PrecisionFilter', 'PriceFilter', 'RangeStabilityFilter',
                        'ShuffleFilter', 'SpreadFilter', 'VolatilityFilter']
 AVAILABLE_PROTECTIONS = ['CooldownPeriod', 'LowProfitPairs', 'MaxDrawdown', 'StoplossGuard']
-AVAILABLE_DATAHANDLERS = ['json', 'jsongz', 'hdf5']
+AVAILABLE_DATAHANDLERS_TRADES = ['json', 'jsongz', 'hdf5']
+AVAILABLE_DATAHANDLERS = AVAILABLE_DATAHANDLERS_TRADES + ['feather', 'parquet']
 BACKTEST_BREAKDOWNS = ['day', 'week', 'month']
 BACKTEST_CACHE_AGE = ['none', 'day', 'week', 'month']
 BACKTEST_CACHE_DEFAULT = 'day'
@@ -55,9 +58,11 @@ FTHYPT_FILEVERSION = 'fthypt_fileversion'
 USERPATH_HYPEROPTS = 'hyperopts'
 USERPATH_STRATEGIES = 'strategies'
 USERPATH_NOTEBOOKS = 'notebooks'
+USERPATH_FREQAIMODELS = 'freqaimodels'
 
 TELEGRAM_SETTING_OPTIONS = ['on', 'off', 'silent']
 WEBHOOK_FORMAT_OPTIONS = ['form', 'json', 'raw']
+FULL_DATAFRAME_THRESHOLD = 100
 
 ENV_VAR_PREFIX = 'FREQTRADE__'
 
@@ -156,6 +161,7 @@ CONF_SCHEMA = {
         'ignore_buying_expired_candle_after': {'type': 'number'},
         'trading_mode': {'type': 'string', 'enum': TRADING_MODES},
         'margin_mode': {'type': 'string', 'enum': MARGIN_MODES},
+        'reduce_df_footprint': {'type': 'boolean', 'default': False},
         'liquidation_buffer': {'type': 'number', 'minimum': 0.0, 'maximum': 0.99},
         'backtest_breakdown': {
             'type': 'array',
@@ -224,6 +230,7 @@ CONF_SCHEMA = {
                     'default': 'market'},
                 'stoploss': {'type': 'string', 'enum': ORDERTYPE_POSSIBILITIES},
                 'stoploss_on_exchange': {'type': 'boolean'},
+                'stoploss_price_type': {'type': 'string', 'enum': STOPLOSS_PRICE_TYPES},
                 'stoploss_on_exchange_interval': {'type': 'number'},
                 'stoploss_on_exchange_limit_ratio': {'type': 'number', 'minimum': 0.0,
                                                      'maximum': 1.0}
@@ -240,6 +247,8 @@ CONF_SCHEMA = {
         },
         'exchange': {'$ref': '#/definitions/exchange'},
         'edge': {'$ref': '#/definitions/edge'},
+        'freqai': {'$ref': '#/definitions/freqai'},
+        'external_message_consumer': {'$ref': '#/definitions/external_message_consumer'},
         'experimental': {
             'type': 'object',
             'properties': {
@@ -277,6 +286,7 @@ CONF_SCHEMA = {
                 'enabled': {'type': 'boolean'},
                 'token': {'type': 'string'},
                 'chat_id': {'type': 'string'},
+                'allow_custom_messages': {'type': 'boolean', 'default': True},
                 'balance_dust_level': {'type': 'number', 'minimum': 0.0},
                 'notification_settings': {
                     'type': 'object',
@@ -286,11 +296,12 @@ CONF_SCHEMA = {
                         'warning': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
                         'startup': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
                         'entry': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
-                        'entry_cancel': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
-                        'entry_fill': {'type': 'string',
-                                       'enum': TELEGRAM_SETTING_OPTIONS,
-                                       'default': 'off'
-                                       },
+                        'entry_fill': {
+                            'type': 'string',
+                            'enum': TELEGRAM_SETTING_OPTIONS,
+                            'default': 'off'
+                        },
+                        'entry_cancel': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS, },
                         'exit': {
                             'type': ['string', 'object'],
                             'additionalProperties': {
@@ -298,12 +309,12 @@ CONF_SCHEMA = {
                                 'enum': TELEGRAM_SETTING_OPTIONS
                             }
                         },
-                        'exit_cancel': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
                         'exit_fill': {
                             'type': 'string',
                             'enum': TELEGRAM_SETTING_OPTIONS,
                             'default': 'on'
                         },
+                        'exit_cancel': {'type': 'string', 'enum': TELEGRAM_SETTING_OPTIONS},
                         'protection_trigger': {
                             'type': 'string',
                             'enum': TELEGRAM_SETTING_OPTIONS,
@@ -312,6 +323,17 @@ CONF_SCHEMA = {
                         'protection_trigger_global': {
                             'type': 'string',
                             'enum': TELEGRAM_SETTING_OPTIONS,
+                            'default': 'on'
+                        },
+                        'show_candle': {
+                            'type': 'string',
+                            'enum': ['off', 'ohlc'],
+                            'default': 'off'
+                        },
+                        'strategy_msg': {
+                            'type': 'string',
+                            'enum': TELEGRAM_SETTING_OPTIONS,
+                            'default': 'on'
                         },
                     }
                 },
@@ -327,6 +349,8 @@ CONF_SCHEMA = {
                 'format': {'type': 'string', 'enum': WEBHOOK_FORMAT_OPTIONS, 'default': 'form'},
                 'retries': {'type': 'integer', 'minimum': 0},
                 'retry_delay': {'type': 'number', 'minimum': 0},
+                **dict([(x, {'type': 'object'}) for x in RPCMessageType]),
+                # Below -> Deprecated
                 'webhookentry': {'type': 'object'},
                 'webhookentrycancel': {'type': 'object'},
                 'webhookentryfill': {'type': 'object'},
@@ -335,6 +359,47 @@ CONF_SCHEMA = {
                 'webhookexitfill': {'type': 'object'},
                 'webhookstatus': {'type': 'object'},
             },
+        },
+        'discord': {
+            'type': 'object',
+            'properties': {
+                'enabled': {'type': 'boolean'},
+                'webhook_url': {'type': 'string'},
+                "exit_fill": {
+                    'type': 'array', 'items': {'type': 'object'},
+                    'default': [
+                        {"Trade ID": "{trade_id}"},
+                        {"Exchange": "{exchange}"},
+                        {"Pair": "{pair}"},
+                        {"Direction": "{direction}"},
+                        {"Open rate": "{open_rate}"},
+                        {"Close rate": "{close_rate}"},
+                        {"Amount": "{amount}"},
+                        {"Open date": "{open_date:%Y-%m-%d %H:%M:%S}"},
+                        {"Close date": "{close_date:%Y-%m-%d %H:%M:%S}"},
+                        {"Profit": "{profit_amount} {stake_currency}"},
+                        {"Profitability": "{profit_ratio:.2%}"},
+                        {"Enter tag": "{enter_tag}"},
+                        {"Exit Reason": "{exit_reason}"},
+                        {"Strategy": "{strategy}"},
+                        {"Timeframe": "{timeframe}"},
+                    ]
+                },
+                "entry_fill": {
+                    'type': 'array', 'items': {'type': 'object'},
+                    'default': [
+                        {"Trade ID": "{trade_id}"},
+                        {"Exchange": "{exchange}"},
+                        {"Pair": "{pair}"},
+                        {"Direction": "{direction}"},
+                        {"Open rate": "{open_rate}"},
+                        {"Amount": "{amount}"},
+                        {"Open date": "{open_date:%Y-%m-%d %H:%M:%S}"},
+                        {"Enter tag": "{enter_tag}"},
+                        {"Strategy": "{strategy} {timeframe}"},
+                    ]
+                },
+            }
         },
         'api_server': {
             'type': 'object',
@@ -348,6 +413,7 @@ CONF_SCHEMA = {
                 },
                 'username': {'type': 'string'},
                 'password': {'type': 'string'},
+                'ws_token': {'type': ['string', 'array'], 'items': {'type': 'string'}},
                 'jwt_secret_key': {'type': 'string'},
                 'CORS_origins': {'type': 'array', 'items': {'type': 'string'}},
                 'verbosity': {'type': 'string', 'enum': ['error', 'info']},
@@ -376,7 +442,7 @@ CONF_SCHEMA = {
         },
         'dataformat_trades': {
             'type': 'string',
-            'enum': AVAILABLE_DATAHANDLERS,
+            'enum': AVAILABLE_DATAHANDLERS_TRADES,
             'default': 'jsongz'
         },
         'position_adjustment_enable': {'type': 'boolean'},
@@ -431,7 +497,125 @@ CONF_SCHEMA = {
                 'remove_pumps': {'type': 'boolean'}
             },
             'required': ['process_throttle_secs', 'allowed_risk']
-        }
+        },
+        'external_message_consumer': {
+            'type': 'object',
+            'properties': {
+                'enabled': {'type': 'boolean', 'default': False},
+                'producers': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'name': {'type': 'string'},
+                            'host': {'type': 'string'},
+                            'port': {
+                                'type': 'integer',
+                                'default': 8080,
+                                'minimum': 0,
+                                'maximum': 65535
+                            },
+                            'secure': {'type': 'boolean', 'default': False},
+                            'ws_token': {'type': 'string'},
+                        },
+                        'required': ['name', 'host', 'ws_token']
+                    }
+                },
+                'wait_timeout': {'type': 'integer', 'minimum': 0},
+                'sleep_time': {'type': 'integer', 'minimum': 0},
+                'ping_timeout': {'type': 'integer', 'minimum': 0},
+                'remove_entry_exit_signals': {'type': 'boolean', 'default': False},
+                'initial_candle_limit': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 1500,
+                    'default': 1500
+                },
+                'message_size_limit': {  # In megabytes
+                    'type': 'integer',
+                    'minimum': 1,
+                    'maxmium': 20,
+                    'default': 8,
+                }
+            },
+            'required': ['producers']
+        },
+        "freqai": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean", "default": False},
+                "keras": {"type": "boolean", "default": False},
+                "write_metrics_to_disk": {"type": "boolean", "default": False},
+                "purge_old_models": {"type": ["boolean", "number"], "default": 2},
+                "conv_width": {"type": "integer", "default": 1},
+                "train_period_days": {"type": "integer", "default": 0},
+                "backtest_period_days": {"type": "number", "default": 7},
+                "identifier": {"type": "string", "default": "example"},
+                "feature_parameters": {
+                    "type": "object",
+                    "properties": {
+                        "include_corr_pairlist": {"type": "array"},
+                        "include_timeframes": {"type": "array"},
+                        "label_period_candles": {"type": "integer"},
+                        "include_shifted_candles": {"type": "integer", "default": 0},
+                        "DI_threshold": {"type": "number", "default": 0},
+                        "weight_factor": {"type": "number", "default": 0},
+                        "principal_component_analysis": {"type": "boolean", "default": False},
+                        "use_SVM_to_remove_outliers": {"type": "boolean", "default": False},
+                        "plot_feature_importances": {"type": "integer", "default": 0},
+                        "svm_params": {"type": "object",
+                                       "properties": {
+                                           "shuffle": {"type": "boolean", "default": False},
+                                           "nu": {"type": "number", "default": 0.1}
+                                           },
+                                       },
+                        "shuffle_after_split": {"type": "boolean", "default": False},
+                        "buffer_train_data_candles": {"type": "integer", "default": 0}
+                    },
+                    "required": ["include_timeframes", "include_corr_pairlist", ]
+                },
+                "data_split_parameters": {
+                    "type": "object",
+                    "properties": {
+                        "test_size": {"type": "number"},
+                        "random_state": {"type": "integer"},
+                        "shuffle": {"type": "boolean", "default": False}
+                    },
+                },
+                "model_training_parameters": {
+                    "type": "object"
+                },
+                "rl_config": {
+                    "type": "object",
+                    "properties": {
+                        "train_cycles": {"type": "integer"},
+                        "max_trade_duration_candles": {"type": "integer"},
+                        "add_state_info": {"type": "boolean", "default": False},
+                        "max_training_drawdown_pct": {"type": "number", "default": 0.02},
+                        "cpu_count": {"type": "integer", "default": 1},
+                        "model_type": {"type": "string", "default": "PPO"},
+                        "policy_type": {"type": "string", "default": "MlpPolicy"},
+                        "net_arch": {"type": "array", "default": [128, 128]},
+                        "randomize_startinng_position": {"type": "boolean", "default": False},
+                        "model_reward_parameters": {
+                            "type": "object",
+                            "properties": {
+                                "rr": {"type": "number", "default": 1},
+                                "profit_aim": {"type": "number", "default": 0.025}
+                            }
+                        }
+                    },
+                },
+            },
+            "required": [
+                "enabled",
+                "train_period_days",
+                "backtest_period_days",
+                "identifier",
+                "feature_parameters",
+                "data_split_parameters"
+            ]
+        },
     },
 }
 
@@ -456,7 +640,6 @@ SCHEMA_TRADE_REQUIRED = [
 
 SCHEMA_BACKTEST_REQUIRED = [
     'exchange',
-    'max_open_trades',
     'stake_currency',
     'stake_amount',
     'dry_run_wallet',
@@ -466,6 +649,7 @@ SCHEMA_BACKTEST_REQUIRED = [
 SCHEMA_BACKTEST_REQUIRED_FINAL = SCHEMA_BACKTEST_REQUIRED + [
     'stoploss',
     'minimal_roi',
+    'max_open_trades'
 ]
 
 SCHEMA_MINIMAL_REQUIRED = [
@@ -497,3 +681,9 @@ TradeList = List[List]
 LongShort = Literal['long', 'short']
 EntryExit = Literal['entry', 'exit']
 BuySell = Literal['buy', 'sell']
+MakerTaker = Literal['maker', 'taker']
+BidAsk = Literal['bid', 'ask']
+OBLiteral = Literal['asks', 'bids']
+
+Config = Dict[str, Any]
+IntOrInf = float
