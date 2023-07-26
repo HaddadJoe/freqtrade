@@ -901,8 +901,15 @@ class IStrategy(ABC, HyperStrategyMixin):
         Analyze all pairs using analyze_pair().
         :param pairs: List of pairs to analyze
         """
-        for pair in pairs:
-            self.analyze_pair(pair)
+
+        start_time = time.time()
+        with ThreadPool(processes=40) as pool:
+            pool.map(self.analyze_pair, pairs)
+        end_time = time.time()
+        run_time = end_time - start_time
+
+        logger.info(f"Analysis performed in {run_time} for {len(pairs)}")
+
 
     @staticmethod
     def preserve_df(dataframe: DataFrame) -> Tuple[int, float, datetime]:

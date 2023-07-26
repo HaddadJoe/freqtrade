@@ -24,3 +24,4 @@ Have you search for this feature before requesting it? It's highly likely that a
 ## Describe the enhancement
 
 *Explain the enhancement you would like*
+

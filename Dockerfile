@@ -22,7 +22,7 @@ WORKDIR /freqtrade
 
 # Install dependencies
 FROM base as python-deps
-RUN  apt-get update \
+RUN  apt-get update --fix-missing \
   && apt-get -y install build-essential libssl-dev git libffi-dev libgfortran5 pkg-config cmake gcc \
   && apt-get clean \
   && pip install --upgrade pip
